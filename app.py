@@ -14,7 +14,6 @@ st.set_page_config(
 )
 
 # Ładowanie klucza API
-# Próbuje pobrać z pliku .env (lokalnie) LUB z sekretów Streamlit Cloud
 load_dotenv()
 api_key = os.getenv("GOOGLE_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
 
@@ -126,14 +125,8 @@ TRANSLATIONS = {
 
 # --- LOGIKA AI ---
 
-def get_gemini_model():
-    # Używamy bezpieczniejszego parsowania
-    return genai.GenerativeModel('gemini-1.5-flash')
-
 def analyze_request(mode, vehicle, engine, desc, lang, image=None, context_history=""):
-    model = get_gemini_model()
     lang_name = {"pl": "POLISH", "en": "ENGLISH", "de": "GERMAN"}[lang]
-    
     t = TRANSLATIONS[lang]
 
     base_instruction = f"""
@@ -190,6 +183,12 @@ def analyze_request(mode, vehicle, engine, desc, lang, image=None, context_histo
         }}
         """
 
+    # POPRAWKA: Tworzymy model TUTAJ i przekazujemy system_instruction w konstruktorze
+    model = genai.GenerativeModel(
+        model_name='gemini-1.5-flash',
+        system_instruction=system_instruction
+    )
+
     prompt = f"""
     Context/Previous Info: {context_history}
     Vehicle: {vehicle}
@@ -202,17 +201,20 @@ def analyze_request(mode, vehicle, engine, desc, lang, image=None, context_histo
         content.append(image)
 
     try:
+        # POPRAWKA: Usunięto system_instruction z GenerationConfig
         response = model.generate_content(
             contents=content,
             generation_config=genai.GenerationConfig(
                 response_mime_type="application/json",
-                system_instruction=system_instruction
+                temperature=1,
+                top_p=0.95,
+                top_k=64,
+                max_output_tokens=8192,
             )
         )
         
         # --- ZABEZPIECZENIE PRZED BŁĘDAMI JSON ---
         text_response = response.text.strip()
-        # Czasami model zwraca ```json na początku, musimy to usunąć
         if text_response.startswith("```json"):
             text_response = text_response[7:]
         if text_response.startswith("```"):
